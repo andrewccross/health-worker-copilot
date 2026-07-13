@@ -1,2 +1,2 @@
 # health-worker-copilot
-Healthcare worker application to support decision making
+RAG-powered clinical decision support for frontline TB health workers. Supports Claude, OpenAI, and local Ollama deployment.
