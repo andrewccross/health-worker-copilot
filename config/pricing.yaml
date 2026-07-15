@@ -1,0 +1,18 @@
+# API pricing per million tokens (as of July 2026)
+# Update this file when prices change — no code changes needed
+
+claude-sonnet-4-6:
+  input_per_million: 3.00
+  output_per_million: 15.00
+
+gpt-4o:
+  input_per_million: 5.00
+  output_per_million: 15.00
+
+gpt-4o-mini:
+  input_per_million: 0.15
+  output_per_million: 0.60
+
+ollama:
+  input_per_million: 0.00
+  output_per_million: 0.00

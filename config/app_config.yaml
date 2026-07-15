@@ -1,0 +1,18 @@
+# Application configuration
+# Change values here, never hardcode them in application code
+
+default_provider: claude
+default_model: claude-sonnet-4-6
+
+# RAG settings (used in Stage 3)
+chunk_size: 500
+chunk_overlap: 50
+retrieval_top_k: 4
+
+# Demo safety limits
+max_queries_per_session: 10
+max_tokens_per_response: 1024
+
+# Deployment rung (see docs/deployment_ladder.md)
+# Options: cloud_api, cloud_api_minimized, hosted_open, fully_local
+deployment_rung: cloud_api
