@@ -102,3 +102,9 @@ python rag/ingest.py
 
 This is a one-time operation per document set. End users of the 
 deployed application do not need to run this.
+
+## Vector Database
+
+Built from the documents above using `mxbai-embed-large` via Ollama.
+Chunks: 2151 | Pages: 510 | Built: July 2026
+Rebuild: `python -m rag.ingest`
