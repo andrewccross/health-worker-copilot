@@ -9,7 +9,18 @@ from rag.pipeline import RAGPipeline
 from llm.cost_tracker import CostTracker
 
 
-# ── Page config ────────────────────────────────────────────────
+# ── Cached pipeline ────────────────────────────────────────────
+@st.cache_resource
+def get_pipeline(provider: str, model: str) -> RAGPipeline:
+    """
+    Initialize the RAG pipeline once and cache it.
+    Keyed by provider and model — switching providers creates a
+    new cached instance without reinitializing unnecessarily.
+    """
+    return RAGPipeline(provider=provider, model=model)
+
+
+# ── Page config — must be first Streamlit call ─────────────────
 st.set_page_config(
     page_title="Health Worker AI Copilot",
     page_icon="🏥",
@@ -17,24 +28,25 @@ st.set_page_config(
 )
 
 
-# ── Session state initialisation ───────────────────────────────
-# Streamlit reruns the entire script on every interaction.
-# Session state persists values across reruns.
+# ── Session state ──────────────────────────────────────────────
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
 if "cost_tracker" not in st.session_state:
     st.session_state.cost_tracker = CostTracker()
 
-if "pipeline" not in st.session_state:
-    st.session_state.pipeline = None
-
 if "query_count" not in st.session_state:
     st.session_state.query_count = 0
 
+if "pipeline_ready" not in st.session_state:
+    st.session_state.pipeline_ready = False
+
+if "uploaded_filename" not in st.session_state:
+    st.session_state.uploaded_filename = None
+
 
 # ── Constants ──────────────────────────────────────────────────
-MAX_QUERIES = 10  # Demo safety limit
+MAX_QUERIES = 10
 
 WELCOME_MESSAGE = """
 **Welcome to the Health Worker AI Copilot.**
@@ -48,18 +60,60 @@ disease cases, grounded in WHO treatment guidelines.
 - Receive structured guidance with sources cited
 
 **Example query:**
-*"35-year-old person seeking care, positive sputum smear, no prior TB treatment. 
-What regimen should I start?"*
+*"35-year-old person seeking care, positive sputum smear, no prior 
+TB treatment. What regimen should I start?"*
 
 ---
-⚠️ This tool supports clinical decision-making. It does not replace                                                     
+⚠️ This tool supports clinical decision-making. It does not replace 
 a supervising clinician or current national guidelines.
 """
+
+
+# ── Pipeline warmup ────────────────────────────────────────────
+# Show a loading screen on first visit, then rerun into the full app.
+# This must come after set_page_config and session state,
+# but before the sidebar — otherwise sidebar variables are undefined
+# when the rerun fires.
+
+if not st.session_state.pipeline_ready:
+    st.markdown(
+        """
+        <div style="
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 60vh;
+            text-align: center;
+        ">
+            <h2 style="color: #ffffff;">
+                🏥 Health Worker AI Copilot
+            </h2>
+            <p style="color: #cccccc; font-size: 1.1em;">
+                Loading WHO TB guidelines knowledge base...
+            </p>
+            <p style="color: #aaaaaa; font-size: 0.9em;">
+                Initialising local embedding model (mxbai-embed-large)
+            </p>
+            <p style="color: #888888; font-size: 0.8em; margin-top: 1em;">
+                First load takes ~20 seconds. Subsequent queries are fast.
+            </p>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
+    with st.spinner("Loading knowledge base..."):
+        get_pipeline("claude", "claude-sonnet-4-6")
+
+    st.session_state.pipeline_ready = True
+    st.rerun()
 
 
 # ── Sidebar ────────────────────────────────────────────────────
 with st.sidebar:
     st.title("⚙️ Configuration")
+    st.success("✓ Knowledge base ready", icon="🗂️")
 
     st.subheader("Model")
     provider = st.selectbox(
@@ -68,7 +122,6 @@ with st.sidebar:
         index=0
     )
 
-    # Model selector per provider
     model_options = {
         "claude": ["claude-sonnet-4-6", "claude-haiku-4-5-20251001"],
         "openai": ["gpt-4o", "gpt-4o-mini"],
@@ -81,7 +134,6 @@ with st.sidebar:
         index=0
     )
 
-    # API key input for cloud providers
     if provider == "claude":
         api_key = st.text_input(
             "Anthropic API Key",
@@ -160,17 +212,19 @@ with st.sidebar:
     st.divider()
 
     queries_remaining = MAX_QUERIES - st.session_state.query_count
-    st.caption(f"Demo queries remaining: {queries_remaining}/{MAX_QUERIES}")
+    st.caption(
+        f"Demo queries remaining: {queries_remaining}/{MAX_QUERIES}"
+    )
 
     if st.button("Reset session", use_container_width=True):
         st.session_state.messages = []
         st.session_state.cost_tracker.reset()
         st.session_state.query_count = 0
-        st.session_state.pipeline = None
         st.session_state.uploaded_filename = None
         st.rerun()
 
     st.divider()
+
     st.subheader("📄 National Guidelines")
     st.caption(
         "Upload a country-specific guideline to augment "
@@ -184,31 +238,16 @@ with st.sidebar:
     )
 
     if uploaded_file is not None:
-        # Only process if it's a new upload
-        if (st.session_state.get("uploaded_filename")
-                != uploaded_file.name):
-
-            with st.spinner(
-                f"Processing {uploaded_file.name}..."
-            ):
+        if st.session_state.uploaded_filename != uploaded_file.name:
+            with st.spinner(f"Processing {uploaded_file.name}..."):
                 try:
-                    # Initialize pipeline if needed
-                    if st.session_state.pipeline is None:
-                        st.session_state.pipeline = RAGPipeline(
-                            provider=provider,
-                            model=model,
-                            cost_tracker=st.session_state.cost_tracker
-                        )
-
+                    pipeline = get_pipeline(provider, model)
                     pdf_bytes = uploaded_file.read()
                     chunk_count = (
-                        st.session_state.pipeline
-                        .retriever
-                        .add_uploaded_document(
+                        pipeline.retriever.add_uploaded_document(
                             pdf_bytes, uploaded_file.name
                         )
                     )
-
                     st.session_state.uploaded_filename = (
                         uploaded_file.name
                     )
@@ -216,32 +255,28 @@ with st.sidebar:
                         f"✓ {uploaded_file.name}\n"
                         f"{chunk_count} chunks added"
                     )
-
                 except Exception as e:
                     st.error(f"Upload failed: {str(e)}")
-
         else:
-            st.success(
-                f"✓ {uploaded_file.name} active"
-            )
+            st.success(f"✓ {uploaded_file.name} active")
 
-    elif st.session_state.get("uploaded_filename"):
-        # File was removed — clear the collection
-        if st.session_state.pipeline is not None:
-            st.session_state.pipeline.retriever.clear_uploaded_document()
+    elif st.session_state.uploaded_filename:
+        pipeline = get_pipeline(provider, model)
+        pipeline.retriever.clear_uploaded_document()
         st.session_state.uploaded_filename = None
+
 
 # ── Main content ───────────────────────────────────────────────
 st.title("🏥 Health Worker AI Copilot")
-st.caption("Clinical decision support grounded in WHO TB treatment guidelines")
+st.caption(
+    "Clinical decision support grounded in WHO TB treatment guidelines"
+)
 
 st.divider()
 
-# Display welcome message on first load
 if not st.session_state.messages:
     st.markdown(WELCOME_MESSAGE)
 
-# Display conversation history
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
@@ -253,6 +288,7 @@ for message in st.session_state.messages:
                 f"{meta['output_tokens']} out | "
                 f"Cost: ${meta['cost_usd']:.4f}"
             )
+
 
 # ── Query input ────────────────────────────────────────────────
 if st.session_state.query_count >= MAX_QUERIES:
@@ -266,7 +302,6 @@ else:
     )
 
     if user_input:
-        # Add user message to history
         st.session_state.messages.append({
             "role": "user",
             "content": user_input
@@ -275,53 +310,90 @@ else:
         with st.chat_message("user"):
             st.markdown(user_input)
 
-        # Reinitialize pipeline if provider or model changed
-        current_config = f"{provider}:{model}"
-        if (st.session_state.pipeline is None or
-                st.session_state.get("current_config") != current_config):
-            with st.spinner("Initialising knowledge base..."):
-                st.session_state.pipeline = RAGPipeline(
-                    provider=provider,
-                    model=model,
-                    cost_tracker=st.session_state.cost_tracker
-            )
-            st.session_state.current_config = current_config
+        pipeline = get_pipeline(provider, model)
+        pipeline.llm.cost_tracker = st.session_state.cost_tracker
 
-        # Generate response
         with st.chat_message("assistant"):
-            with st.spinner("Retrieving guidelines and generating response..."):
-                try:
-                    result = st.session_state.pipeline.query(user_input)
+            try:
+                if provider == "claude":
+                    with st.spinner("Retrieving guidelines..."):
+                        chunks = pipeline.retriever.retrieve(user_input)
+                        context = pipeline.retriever.format_context(
+                            chunks
+                        )
+                        user_message = pipeline._build_user_message(
+                            user_input, context
+                        )
+
+                    response_container = st.empty()
+                    full_response = ""
+
+                    for text_chunk in (
+                        pipeline.llm._complete_claude_stream(
+                            system_prompt=pipeline.system_prompt,
+                            user_message=user_message,
+                            max_tokens=1024
+                        )
+                    ):
+                        full_response += text_chunk
+                        response_container.markdown(
+                            full_response + "▌"
+                        )
+
+                    response_container.markdown(full_response)
+                    usage = pipeline.llm._last_usage
+
+                    st.caption(
+                        f"Sources: "
+                        f"{', '.join(set(c['source'] for c in chunks))}"
+                        f" | Tokens: {usage['input_tokens']} in, "
+                        f"{usage['output_tokens']} out | "
+                        f"Cost: ${usage['cost_usd']:.4f}"
+                    )
+
+                    result = {
+                        "response": full_response,
+                        "chunks": chunks,
+                        "input_tokens": usage["input_tokens"],
+                        "output_tokens": usage["output_tokens"],
+                        "cost_usd": usage["cost_usd"]
+                    }
+
+                else:
+                    with st.spinner(
+                        "Retrieving guidelines and generating "
+                        "response..."
+                    ):
+                        result = pipeline.query(user_input)
 
                     st.markdown(result["response"])
                     st.caption(
                         f"Sources: "
-                        f"{', '.join(set(c['source'] for c in result['chunks']))} | "
-                        f"Tokens: {result['input_tokens']} in, "
+                        f"{', '.join(set(c['source'] for c in result['chunks']))}"
+                        f" | Tokens: {result['input_tokens']} in, "
                         f"{result['output_tokens']} out | "
                         f"Cost: ${result['cost_usd']:.4f}"
                     )
 
-                    # Save to history
-                    st.session_state.messages.append({
-                        "role": "assistant",
-                        "content": result["response"],
-                        "meta": {
-                            "sources": [c["source"] for c in result["chunks"]],
-                            "input_tokens": result["input_tokens"],
-                            "output_tokens": result["output_tokens"],
-                            "cost_usd": result["cost_usd"]
-                        }
-                    })
+                st.session_state.messages.append({
+                    "role": "assistant",
+                    "content": result["response"],
+                    "meta": {
+                        "sources": [
+                            c["source"] for c in result["chunks"]
+                        ],
+                        "input_tokens": result["input_tokens"],
+                        "output_tokens": result["output_tokens"],
+                        "cost_usd": result["cost_usd"]
+                    }
+                })
 
-                    st.session_state.query_count += 1
+                st.session_state.query_count += 1
+                st.rerun()
 
-                    # Refresh sidebar cost display
-                    st.rerun()
-
-                except Exception as e:
-                    st.error(f"Error generating response: {str(e)}")
-                    st.info(
-                        "Check that Ollama is running and your "
-                        "API key is set in .env"
-                    )
+            except Exception as e:
+                st.error(f"Error generating response: {str(e)}")
+                st.info(
+                    "Check that Ollama is running and your "
+                    "API key is set in .env"
+                )

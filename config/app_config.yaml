@@ -16,3 +16,7 @@ max_tokens_per_response: 1024
 # Deployment rung (see docs/deployment_ladder.md)
 # Options: cloud_api, cloud_api_minimized, hosted_open, fully_local
 deployment_rung: cloud_api
+
+# Performance
+cache_pipeline: true
+show_loading_screen: true

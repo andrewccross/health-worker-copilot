@@ -55,3 +55,11 @@ deployment contexts.
 Ollama responses take 45-90 seconds on CPU-only hardware. Unacceptable
 for routine clinical use without GPU acceleration. Cloud API providers
 respond in 15-30 seconds including retrieval.
+
+### 5. Cold start latency
+Streamlit takes 15-20 seconds to initialize on first browser load 
+on local hardware. This is framework overhead, not application code.
+On Streamlit Community Cloud the cold start is approximately 5-8 
+seconds. A production deployment would use a faster framework 
+(FastAPI + React) with a proper loading state. Streamlit is 
+appropriate for portfolio demonstration purposes.
