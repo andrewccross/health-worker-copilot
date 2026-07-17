@@ -43,16 +43,16 @@ This tool provides clinical decision support for TB and infectious
 disease cases, grounded in WHO treatment guidelines.
 
 **How to use:**
-- Describe a patient case in plain language
+- Describe a person's health case in plain language
 - Include relevant details: symptoms, test results, treatment history
 - Receive structured guidance with sources cited
 
 **Example query:**
-*"35-year-old patient, positive sputum smear, no prior TB treatment. 
+*"35-year-old person seeking care, positive sputum smear, no prior TB treatment. 
 What regimen should I start?"*
 
 ---
-⚠️ This tool supports clinical decision-making. It does not replace 
+⚠️ This tool supports clinical decision-making. It does not replace                                                     
 a supervising clinician or current national guidelines.
 """
 
@@ -64,10 +64,52 @@ with st.sidebar:
     st.subheader("Model")
     provider = st.selectbox(
         "LLM Provider",
-        options=["claude"],
-        index=0,
-        help="Additional providers (OpenAI, Ollama) coming in Stage 5"
+        options=["claude", "openai", "ollama"],
+        index=0
     )
+
+    # Model selector per provider
+    model_options = {
+        "claude": ["claude-sonnet-4-6", "claude-haiku-4-5-20251001"],
+        "openai": ["gpt-4o", "gpt-4o-mini"],
+        "ollama": ["llama3.2", "llama2", "mistral"]
+    }
+
+    model = st.selectbox(
+        "Model",
+        options=model_options[provider],
+        index=0
+    )
+
+    # API key input for cloud providers
+    if provider == "claude":
+        api_key = st.text_input(
+            "Anthropic API Key",
+            type="password",
+            placeholder="sk-ant-... (or set in .env)",
+            help="Leave blank to use key from .env file"
+        )
+        if api_key:
+            import os
+            os.environ["ANTHROPIC_API_KEY"] = api_key
+
+    elif provider == "openai":
+        api_key = st.text_input(
+            "OpenAI API Key",
+            type="password",
+            placeholder="sk-... (or set in .env)",
+            help="Leave blank to use key from .env file"
+        )
+        if api_key:
+            import os
+            os.environ["OPENAI_API_KEY"] = api_key
+
+    elif provider == "ollama":
+        st.info(
+            "Ollama runs locally.\n"
+            "No API key required.\n"
+            "Make sure `ollama serve` is running."
+        )
 
     st.divider()
 
@@ -85,10 +127,35 @@ with st.sidebar:
     st.divider()
 
     st.subheader("🔒 Data Sovereignty")
-    if provider == "claude":
-        st.error("● Data leaves facility\n(Claude API)")
+
+    sovereignty = {
+        "claude": {
+            "status": "error",
+            "rung": "Rung 1: Cloud API",
+            "message": "● Data leaves facility",
+            "detail": "Queries sent to Anthropic API"
+        },
+        "openai": {
+            "status": "error",
+            "rung": "Rung 1: Cloud API",
+            "message": "● Data leaves facility",
+            "detail": "Queries sent to OpenAI API"
+        },
+        "ollama": {
+            "status": "success",
+            "rung": "Rung 4: Fully Local",
+            "message": "● Data stays on device",
+            "detail": "No data transmission"
+        }
+    }
+
+    s = sovereignty[provider]
+    if s["status"] == "error":
+        st.error(f"{s['message']}\n{s['detail']}")
     else:
-        st.success("● Data stays local\n(Ollama)")
+        st.success(f"{s['message']}\n{s['detail']}")
+
+    st.caption(s["rung"])
 
     st.divider()
 
@@ -134,7 +201,7 @@ if st.session_state.query_count >= MAX_QUERIES:
     )
 else:
     user_input = st.chat_input(
-        "Describe a patient case or ask a clinical question..."
+        "Describe a person's health case or ask a clinical question..."
     )
 
     if user_input:
@@ -147,13 +214,17 @@ else:
         with st.chat_message("user"):
             st.markdown(user_input)
 
-        # Initialise pipeline if needed
-        if st.session_state.pipeline is None:
+        # Reinitialize pipeline if provider or model changed
+        current_config = f"{provider}:{model}"
+        if (st.session_state.pipeline is None or
+                st.session_state.get("current_config") != current_config):
             with st.spinner("Initialising knowledge base..."):
                 st.session_state.pipeline = RAGPipeline(
                     provider=provider,
+                    model=model,
                     cost_tracker=st.session_state.cost_tracker
-                )
+            )
+            st.session_state.current_config = current_config
 
         # Generate response
         with st.chat_message("assistant"):
