@@ -167,8 +167,69 @@ with st.sidebar:
         st.session_state.cost_tracker.reset()
         st.session_state.query_count = 0
         st.session_state.pipeline = None
+        st.session_state.uploaded_filename = None
         st.rerun()
 
+    st.divider()
+    st.subheader("📄 National Guidelines")
+    st.caption(
+        "Upload a country-specific guideline to augment "
+        "the WHO base knowledge for this session."
+    )
+
+    uploaded_file = st.file_uploader(
+        "Upload PDF",
+        type=["pdf"],
+        help="Document is processed locally and not stored permanently."
+    )
+
+    if uploaded_file is not None:
+        # Only process if it's a new upload
+        if (st.session_state.get("uploaded_filename")
+                != uploaded_file.name):
+
+            with st.spinner(
+                f"Processing {uploaded_file.name}..."
+            ):
+                try:
+                    # Initialize pipeline if needed
+                    if st.session_state.pipeline is None:
+                        st.session_state.pipeline = RAGPipeline(
+                            provider=provider,
+                            model=model,
+                            cost_tracker=st.session_state.cost_tracker
+                        )
+
+                    pdf_bytes = uploaded_file.read()
+                    chunk_count = (
+                        st.session_state.pipeline
+                        .retriever
+                        .add_uploaded_document(
+                            pdf_bytes, uploaded_file.name
+                        )
+                    )
+
+                    st.session_state.uploaded_filename = (
+                        uploaded_file.name
+                    )
+                    st.success(
+                        f"✓ {uploaded_file.name}\n"
+                        f"{chunk_count} chunks added"
+                    )
+
+                except Exception as e:
+                    st.error(f"Upload failed: {str(e)}")
+
+        else:
+            st.success(
+                f"✓ {uploaded_file.name} active"
+            )
+
+    elif st.session_state.get("uploaded_filename"):
+        # File was removed — clear the collection
+        if st.session_state.pipeline is not None:
+            st.session_state.pipeline.retriever.clear_uploaded_document()
+        st.session_state.uploaded_filename = None
 
 # ── Main content ───────────────────────────────────────────────
 st.title("🏥 Health Worker AI Copilot")
