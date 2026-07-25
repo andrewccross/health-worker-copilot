@@ -1,6 +1,6 @@
 # Health Worker AI Copilot
 
-**Eemonstration RAG-powered clinical decision support for frontline TB and 
+**Demonstration RAG-powered clinical decision support for frontline TB and 
 infectious disease health workers in low-resource settings.**
 
 Built by [Andrew Cross](https://www.linkedin.com/in/andrewccross/).
