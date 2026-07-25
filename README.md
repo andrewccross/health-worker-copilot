@@ -5,7 +5,7 @@ infectious disease health workers in low-resource settings.**
 
 Built by [Andrew Cross](https://www.linkedin.com/in/andrewccross/).
 
-[**→ Live Demo**](YOUR_STREAMLIT_URL_HERE) | 
+[**→ Live Demo**](https://health-worker-copilot.streamlit.app)
 [**→ LinkedIn**](https://www.linkedin.com/in/andrewccross/) |
 [**→ Stop TB**](https://www.rtc.stoptb.org/)
 
@@ -65,12 +65,12 @@ Three deployment options are supported:
 Tested against 8 ground truth clinical cases derived from WHO TB 
 treatment guidelines:
 
-| Dimension | Claude Sonnet | Llama3.2 (Local) |
-|---|---|---|
-| Overall | 91% | 56% |
-| Concept coverage | 74% | 34% |
-| Safety compliance | 100% | 33% |
-| Cost per session | ~$0.01/query | $0.00 |
+| Dimension | Claude Sonnet | Llama3.2 (Local) | Delta |
+|---|---|---|---|
+| Overall | 89% | 57% | -32pp |
+| Concept coverage | 70% | 35% | -35pp |
+| Safety compliance | 96% | 38% | -58pp |
+| Cost per session | ~$0.01/query | $0.00 | - |
 
 **Key finding:** Safety compliance — inclusion of specialist referral 
 guidance, national guidelines disclaimers, and uncertainty flags — 
