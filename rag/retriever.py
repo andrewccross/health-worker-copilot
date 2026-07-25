@@ -82,11 +82,20 @@ class Retriever:
         self._memory_client = chromadb.EphemeralClient()
 
     def _load_base_collection(self) -> chromadb.Collection:
+        """
+        Load existing collection without specifying embedding function.
+        
+        Design decision: we do not pass embedding_function to
+        get_collection(). ChromaDB stores the embedding function
+        configuration in the collection metadata at creation time.
+        Passing a different function on retrieval causes a conflict
+        error even when the underlying model is the same.
+        
+        Instead we embed queries manually before passing to ChromaDB,
+        bypassing the automatic embedding entirely.
+        """
         client = chromadb.PersistentClient(path=str(CHROMA_DIR))
-        return client.get_collection(
-            name=COLLECTION_NAME,
-            embedding_function=self.embedding_function
-        )
+        return client.get_collection(name=COLLECTION_NAME)
 
     def add_uploaded_document(self, pdf_bytes: bytes,
                                filename: str) -> int:
@@ -188,10 +197,15 @@ class Retriever:
         return combined[:self.top_k]
 
     def _query_collection(self, collection,
-                           query: str,
-                           n: int) -> list[dict]:
+                       query: str,
+                       n: int) -> list[dict]:
+        # Embed the query manually using our embedding function
+        # This bypasses ChromaDB's internal embedding to avoid
+        # embedding function conflict errors
+        query_embedding = self.embedding_function([query])
+        
         results = collection.query(
-            query_texts=[query],
+            query_embeddings=query_embedding,
             n_results=n
         )
 
