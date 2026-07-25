@@ -94,11 +94,11 @@ def build_vector_store(chunks: list) -> chromadb.Collection:
     print(f"\nInitializing ChromaDB at: {CHROMA_DIR}")
     
     # Use Ollama for local embeddings — no API key needed
-    embedding_function = embedding_functions.OllamaEmbeddingFunction(
-        url="http://localhost:11434/api/embeddings",
-        model_name="mxbai-embed-large",
-        timeout=120
+    embedding_function = (
+    embedding_functions.SentenceTransformerEmbeddingFunction(
+        model_name="all-MiniLM-L6-v2"
     )
+)
     
     client = chromadb.PersistentClient(path=str(CHROMA_DIR))
     
@@ -119,9 +119,9 @@ def build_vector_store(chunks: list) -> chromadb.Collection:
     batch_size = 10
     total_chunks = len(chunks)
     
-    print(f"\nEmbedding {total_chunks} chunks using mxbai-embed-large (local)...")
-    print("This runs entirely on your machine — no data leaves your system.")
-    print("First run takes several minutes. Subsequent queries are instant.\n")
+    print(f"\nEmbedding {total_chunks} chunks using all-MiniLM-L6-v2...")
+    print("No external service required — runs entirely locally.")
+    print("Compatible with both local and cloud deployment.\n")
     
     for i in range(0, total_chunks, batch_size):
         batch = chunks[i:i + batch_size]

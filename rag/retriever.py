@@ -14,15 +14,46 @@ COLLECTION_NAME = "who_tb_guidelines"
 
 def get_embedding_function():
     """
-    Single source of truth for the embedding function.
-    Used by both ingestion and retrieval to ensure consistency.
-    Using different embedding models for ingestion vs retrieval
-    is a silent failure mode that degrades retrieval quality.
+    Embedding model: sentence-transformers all-MiniLM-L6-v2.
+
+    Design decision: we use sentence-transformers rather than
+    Ollama mxbai-embed-large for embeddings.
+
+    Alternatives considered:
+
+    Option A (chosen): sentence-transformers all-MiniLM-L6-v2
+    - Runs locally, no external service dependency
+    - Works identically on local and cloud deployment
+    - Slightly lower semantic accuracy than larger models
+    - Zero cost at ingestion and query time
+    - 384-dimensional vectors, fast on CPU
+
+    Option B: Ollama mxbai-embed-large
+    - Higher quality embeddings for clinical text
+    - Requires Ollama running as a background service
+    - Not available on cloud deployment (Streamlit Community Cloud
+      has no Ollama installation)
+    - Would require separate embedding strategy per environment,
+      and ChromaDB built with one model cannot be queried with
+      another without full re-ingestion
+
+    Option C: OpenAI text-embedding-3-small via API
+    - High quality, managed service
+    - Requires OpenAI API key and incurs per-token cost
+    - ~$0.004 for full ingestion of this knowledge base
+    - Adds external dependency for a sovereignty-focused tool
+    - Not chosen: contradicts the local-first design principle
+
+    Consistency rule: ingestion and retrieval MUST use the same
+    embedding model. Mixing models silently degrades retrieval
+    quality because vectors are not comparable across models.
+    This is a common and hard-to-debug failure mode in RAG systems.
     """
-    return embedding_functions.OllamaEmbeddingFunction(
-        url="http://localhost:11434/api/embeddings",
-        model_name="mxbai-embed-large",
-        timeout=120
+    from chromadb.utils.embedding_functions import (
+        SentenceTransformerEmbeddingFunction
+    )
+    return SentenceTransformerEmbeddingFunction(
+        model_name="all-MiniLM-L6-v2"
     )
 
 
