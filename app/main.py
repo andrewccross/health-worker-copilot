@@ -7,6 +7,11 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from rag.pipeline import RAGPipeline
 from llm.cost_tracker import CostTracker
+from app.comparison import (
+    run_comparison,
+    render_comparison_results,
+    render_comparison_loading
+)
 
 import os
 
@@ -38,6 +43,12 @@ st.set_page_config(
 # ── Session state ──────────────────────────────────────────────
 if "messages" not in st.session_state:
     st.session_state.messages = []
+
+if "comparison_mode" not in st.session_state:
+    st.session_state.comparison_mode = False
+
+if "comparison_results" not in st.session_state:
+    st.session_state.comparison_results = None
 
 if "cost_tracker" not in st.session_state:
     st.session_state.cost_tracker = CostTracker()
@@ -186,6 +197,55 @@ with st.sidebar:
 
     st.divider()
 
+    st.subheader("🔀 Comparison Mode")
+    st.session_state.comparison_mode = st.toggle(
+        "Compare two providers",
+        value=st.session_state.comparison_mode,
+        help="Submit one query and see responses from two providers side by side"
+    )
+
+    if st.session_state.comparison_mode:
+        st.caption("Provider A is selected above.")
+        
+        provider_b = st.selectbox(
+            "Provider B",
+            options=(
+                ["claude", "openai"] if IS_CLOUD
+                else ["claude", "openai", "ollama"]
+            ),
+            index=1,
+            key="provider_b"
+        )
+
+        model_b_options = {
+            "claude": ["claude-sonnet-4-6", "claude-haiku-4-5-20251001"],
+            "openai": ["gpt-4o", "gpt-4o-mini"],
+            "ollama": ["llama3.2", "llama2", "mistral"]
+        }
+
+        model_b = st.selectbox(
+            "Model B",
+            options=model_b_options[provider_b],
+            index=0,
+            key="model_b"
+        )
+
+        if provider_b == "openai":
+            api_key_b = st.text_input(
+                "OpenAI API Key (Provider B)",
+                type="password",
+                placeholder="sk-...",
+                key="api_key_b"
+            )
+            if api_key_b:
+                import os
+                os.environ["OPENAI_API_KEY"] = api_key_b
+
+        elif provider_b == "ollama" and not IS_CLOUD:
+            st.info("Ollama runs locally. Make sure ollama serve is running.")
+
+    st.divider()
+
     st.subheader("💰 Session Cost")
     summary = st.session_state.cost_tracker.summary()
 
@@ -242,6 +302,7 @@ with st.sidebar:
         st.session_state.cost_tracker.reset()
         st.session_state.query_count = 0
         st.session_state.uploaded_filename = None
+        st.session_state.comparison_results = None
         st.rerun()
 
     st.divider()
@@ -316,6 +377,12 @@ for message in st.session_state.messages:
                 f"Cost: ${meta['cost_usd']:.4f}"
             )
 
+# ── Render stored comparison results ──────────────────────────
+if (st.session_state.comparison_mode and
+        st.session_state.comparison_results is not None):
+    render_comparison_results(
+        st.session_state.comparison_results
+    )
 
 # ── Query input ────────────────────────────────────────────────
 if st.session_state.query_count >= MAX_QUERIES:
@@ -337,90 +404,162 @@ else:
         with st.chat_message("user"):
             st.markdown(user_input)
 
-        pipeline = get_pipeline(provider, model)
-        pipeline.llm.cost_tracker = st.session_state.cost_tracker
+        # ── Comparison mode ─────────────────────────────────────────
+        if st.session_state.comparison_mode:
+            provider_b = st.session_state.get("provider_b", "openai")
+            model_b = st.session_state.get("model_b", "gpt-4o")
 
-        with st.chat_message("assistant"):
-            try:
-                if provider == "claude":
-                    with st.spinner("Retrieving guidelines..."):
-                        chunks = pipeline.retriever.retrieve(user_input)
-                        context = pipeline.retriever.format_context(
-                            chunks
-                        )
-                        user_message = pipeline._build_user_message(
-                            user_input, context
-                        )
-
-                    response_container = st.empty()
-                    full_response = ""
-
-                    for text_chunk in (
-                        pipeline.llm._complete_claude_stream(
-                            system_prompt=pipeline.system_prompt,
-                            user_message=user_message,
-                            max_tokens=1024
-                        )
-                    ):
-                        full_response += text_chunk
-                        response_container.markdown(
-                            full_response + "▌"
-                        )
-
-                    response_container.markdown(full_response)
-                    usage = pipeline.llm._last_usage
-
-                    st.caption(
-                        f"Sources: "
-                        f"{', '.join(set(c['source'] for c in chunks))}"
-                        f" | Tokens: {usage['input_tokens']} in, "
-                        f"{usage['output_tokens']} out | "
-                        f"Cost: ${usage['cost_usd']:.4f}"
+            with st.chat_message("assistant"):
+                # Show skeleton immediately
+                skeleton = st.empty()
+                with skeleton.container():
+                    render_comparison_loading(
+                        provider_a=provider,
+                        model_a=model,
+                        provider_b=provider_b,
+                        model_b=model_b,
+                        sources=[]
                     )
 
-                    result = {
-                        "response": full_response,
-                        "chunks": chunks,
-                        "input_tokens": usage["input_tokens"],
-                        "output_tokens": usage["output_tokens"],
-                        "cost_usd": usage["cost_usd"]
-                    }
+                # Top-level spinner shows Streamlit is actively working
+                with st.spinner(
+                    f"Querying {provider} and {provider_b} — "
+                    f"this takes 15-60 seconds..."
+                ):
+                    try:
+                        results = run_comparison(
+                            query=user_input,
+                            provider_a=provider,
+                            model_a=model,
+                            provider_b=provider_b,
+                            model_b=model_b,
+                            get_pipeline_fn=get_pipeline
+                        )
 
-                else:
-                    with st.spinner(
-                        "Retrieving guidelines and generating "
-                        "response..."
-                    ):
-                        result = pipeline.query(user_input)
+                        # Clear skeleton
+                        skeleton.empty()
 
-                    st.markdown(result["response"])
-                    st.caption(
-                        f"Sources: "
-                        f"{', '.join(set(c['source'] for c in result['chunks']))}"
-                        f" | Tokens: {result['input_tokens']} in, "
-                        f"{result['output_tokens']} out | "
-                        f"Cost: ${result['cost_usd']:.4f}"
+                        st.session_state.comparison_results = results
+
+                        st.session_state.messages.append({
+                            "role": "assistant",
+                            "content": (
+                                f"**Comparison: "
+                                f"{provider.title()} vs "
+                                f"{provider_b.title()}**"
+                            ),
+                            "meta": {
+                                "sources": results["sources"],
+                                "input_tokens": (
+                                    results["a"]["input_tokens"] +
+                                    results["b"]["input_tokens"]
+                                ),
+                                "output_tokens": (
+                                    results["a"]["output_tokens"] +
+                                    results["b"]["output_tokens"]
+                                ),
+                                "cost_usd": (
+                                    results["a"]["cost_usd"] +
+                                    results["b"]["cost_usd"]
+                                )
+                            }
+                        })
+
+                        st.session_state.query_count += 1
+                        st.rerun()
+
+                    except Exception as e:
+                        skeleton.empty()
+                        st.error(f"Comparison error: {str(e)}")
+
+        else:
+            # ── Standard mode ──────────────────────────────
+            pipeline = get_pipeline(provider, model)
+            pipeline.llm.cost_tracker = st.session_state.cost_tracker
+
+            with st.chat_message("assistant"):
+                try:
+                    if provider == "claude":
+                        with st.spinner("Retrieving guidelines..."):
+                            chunks = pipeline.retriever.retrieve(
+                                user_input
+                            )
+                            context = pipeline.retriever.format_context(
+                                chunks
+                            )
+                            user_message = pipeline._build_user_message(
+                                user_input, context
+                            )
+
+                        response_container = st.empty()
+                        full_response = ""
+
+                        for text_chunk in (
+                            pipeline.llm._complete_claude_stream(
+                                system_prompt=pipeline.system_prompt,
+                                user_message=user_message,
+                                max_tokens=1024
+                            )
+                        ):
+                            full_response += text_chunk
+                            response_container.markdown(
+                                full_response + "▌"
+                            )
+
+                        response_container.markdown(full_response)
+                        usage = pipeline.llm._last_usage
+
+                        st.caption(
+                            f"Sources: "
+                            f"{', '.join(set(c['source'] for c in chunks))}"
+                            f" | Tokens: {usage['input_tokens']} in, "
+                            f"{usage['output_tokens']} out | "
+                            f"Cost: ${usage['cost_usd']:.4f}"
+                        )
+
+                        result = {
+                            "response": full_response,
+                            "chunks": chunks,
+                            "input_tokens": usage["input_tokens"],
+                            "output_tokens": usage["output_tokens"],
+                            "cost_usd": usage["cost_usd"]
+                        }
+
+                    else:
+                        with st.spinner(
+                            "Retrieving guidelines and generating "
+                            "response..."
+                        ):
+                            result = pipeline.query(user_input)
+
+                        st.markdown(result["response"])
+                        st.caption(
+                            f"Sources: "
+                            f"{', '.join(set(c['source'] for c in result['chunks']))}"
+                            f" | Tokens: {result['input_tokens']} in, "
+                            f"{result['output_tokens']} out | "
+                            f"Cost: ${result['cost_usd']:.4f}"
+                        )
+
+                    st.session_state.messages.append({
+                        "role": "assistant",
+                        "content": result["response"],
+                        "meta": {
+                            "sources": [
+                                c["source"] for c in result["chunks"]
+                            ],
+                            "input_tokens": result["input_tokens"],
+                            "output_tokens": result["output_tokens"],
+                            "cost_usd": result["cost_usd"]
+                        }
+                    })
+
+                    st.session_state.query_count += 1
+                    st.rerun()
+
+                except Exception as e:
+                    st.error(f"Error generating response: {str(e)}")
+                    st.info(
+                        "Check that Ollama is running and your "
+                        "API key is set in .env"
                     )
-
-                st.session_state.messages.append({
-                    "role": "assistant",
-                    "content": result["response"],
-                    "meta": {
-                        "sources": [
-                            c["source"] for c in result["chunks"]
-                        ],
-                        "input_tokens": result["input_tokens"],
-                        "output_tokens": result["output_tokens"],
-                        "cost_usd": result["cost_usd"]
-                    }
-                })
-
-                st.session_state.query_count += 1
-                st.rerun()
-
-            except Exception as e:
-                st.error(f"Error generating response: {str(e)}")
-                st.info(
-                    "Check that Ollama is running and your "
-                    "API key is set in .env"
-                )
