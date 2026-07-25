@@ -8,6 +8,13 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from rag.pipeline import RAGPipeline
 from llm.cost_tracker import CostTracker
 
+import os
+
+# Detect deployment environment
+# IS_CLOUD_DEPLOYMENT is set in Streamlit Cloud secrets
+# Never set locally, so defaults to False
+IS_CLOUD = os.getenv("IS_CLOUD_DEPLOYMENT", "false").lower() == "true"
+
 
 # ── Cached pipeline ────────────────────────────────────────────
 @st.cache_resource
@@ -116,9 +123,16 @@ with st.sidebar:
     st.success("✓ Knowledge base ready", icon="🗂️")
 
     st.subheader("Model")
+
+    # On cloud deployment, hide Ollama — it requires local installation
+    available_providers = (
+        ["claude", "openai"] if IS_CLOUD
+        else ["claude", "openai", "ollama"]
+    )
+
     provider = st.selectbox(
         "LLM Provider",
-        options=["claude", "openai", "ollama"],
+        options=available_providers,
         index=0
     )
 
@@ -157,11 +171,18 @@ with st.sidebar:
             os.environ["OPENAI_API_KEY"] = api_key
 
     elif provider == "ollama":
-        st.info(
-            "Ollama runs locally.\n"
-            "No API key required.\n"
-            "Make sure `ollama serve` is running."
-        )
+        if IS_CLOUD:
+            st.warning(
+                "Ollama requires local deployment.\n"
+                "Clone the repo to use local models.\n"
+                "See README for setup instructions."
+            )
+        else:
+            st.info(
+                "Ollama runs locally.\n"
+                "No API key required.\n"
+                "Make sure `ollama serve` is running."
+            )
 
     st.divider()
 
@@ -242,6 +263,12 @@ with st.sidebar:
             with st.spinner(f"Processing {uploaded_file.name}..."):
                 try:
                     pipeline = get_pipeline(provider, model)
+                    if provider == "ollama" and IS_CLOUD:
+                        st.warning(
+                            "Ollama is not available in the cloud demo. "
+                            "Select Claude or clone the repo to run locally."
+                        )
+                        st.stop()
                     pdf_bytes = uploaded_file.read()
                     chunk_count = (
                         pipeline.retriever.add_uploaded_document(
