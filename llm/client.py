@@ -117,6 +117,39 @@ class LLMClient:
             "provider": self.provider,
             "model": self.model
         }
+    
+    def _complete_claude_stream(self,
+                             system_prompt: str,
+                             user_message: str,
+                             max_tokens: int):
+        """
+        Streaming version of Claude completion.
+        Yields text chunks as they arrive.
+        Used by the Streamlit UI for responsive display.
+        """
+        with self.client.messages.stream(
+            model=self.model,
+            max_tokens=max_tokens,
+            system=system_prompt,
+            messages=[{"role": "user", "content": user_message}]
+        ) as stream:
+            full_text = ""
+            for text in stream.text_stream:
+                full_text += text
+                yield text
+
+            # Record cost after stream completes
+            final_message = stream.get_final_message()
+            input_tokens = final_message.usage.input_tokens
+            output_tokens = final_message.usage.output_tokens
+            self.cost_tracker.record(
+                self.model, input_tokens, output_tokens
+            )
+            self._last_usage = {
+                "input_tokens": input_tokens,
+                "output_tokens": output_tokens,
+                "cost_usd": self.cost_tracker.calls[-1]["cost_usd"]
+            }
 
     def _complete_openai(self, system_prompt, user_message, max_tokens):
         response = self.client.chat.completions.create(

@@ -62,6 +62,20 @@ class RAGPipeline:
             model=model,
             cost_tracker=cost_tracker or CostTracker()
         )
+        self.system_prompt = CLINICAL_SYSTEM_PROMPT
+    def _build_user_message(self, question: str, context: str) -> str:
+        """Builds the user message with context prepended."""
+        return f"""GUIDELINE CONTEXT:
+    {context}
+
+    ---
+
+    CLINICAL QUESTION:
+    {question}
+
+    Answer using only the guideline context above.
+    If the context does not contain enough information to answer safely,
+    say so explicitly in the UNCERTAINTY section."""
 
     def query(self, user_question: str) -> dict:
         """
