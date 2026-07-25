@@ -6,3 +6,4 @@ __pycache__/
 .DS_Store
 knowledge_base/national_tb_guidelines/
 eval/results/*.json
+knowledge_base/chroma_db/chroma.sqlite3
