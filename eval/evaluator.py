@@ -248,15 +248,14 @@ def run_evaluation(provider: str = "claude",
 
     return summary
 
-
-# if __name__ == "__main__":
-#     run_evaluation(
-#         provider="claude",
-#         model="claude-sonnet-4-6"
-#     )
+#if __name__ == "__main__":
+#    run_evaluation(
+#        provider="ollama",
+#        model="llama3.2"
+#    )
 
 if __name__ == "__main__":
     run_evaluation(
-        provider="ollama",
-        model="llama3.2"
+        provider="claude",
+        model="claude-sonnet-4-6"
     )

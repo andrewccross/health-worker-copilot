@@ -9,6 +9,20 @@ Built by [Andrew Cross](https://www.linkedin.com/in/andrewccross/).
 [**→ LinkedIn**](https://www.linkedin.com/in/andrewccross/) |
 [**→ Stop TB**](https://www.rtc.stoptb.org/)
 
+
+---
+
+## Running the demo
+
+**Cloud demo** (Claude only): [link]
+Demonstrates RAG pipeline, structured output, cost tracking,
+and national guideline upload. Ollama provider not available
+in cloud deployment.
+
+**Local deployment** (all providers including Ollama):
+Clone the repo and follow the setup instructions to run
+with full local model support.
+
 ---
 
 ## What this does
