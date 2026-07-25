@@ -63,3 +63,23 @@ On Streamlit Community Cloud the cold start is approximately 5-8
 seconds. A production deployment would use a faster framework 
 (FastAPI + React) with a proper loading state. Streamlit is 
 appropriate for portfolio demonstration purposes.
+
+### 6. Local model safety compliance gap
+
+Evaluation against 8 ground truth cases showed Ollama Llama3.2
+achieved 33% safety compliance vs 100% for Claude Sonnet. The local
+model frequently omitted specialist referral guidance and national
+guidelines disclaimers that the system prompt explicitly requested.
+
+Root cause: smaller local models are less instruction-following than
+commercial models, particularly for nuanced safety requirements
+embedded in long system prompts.
+
+Partial mitigation: inject mandatory safety disclaimers as a
+post-processing step rather than relying on the model to include
+them. This is planned for a future release.
+
+Current recommendation: Ollama deployment (Rung 4) is appropriate
+for connectivity-constrained environments where cloud APIs are
+unavailable, with the understanding that safety compliance is
+reduced and additional clinical oversight is required.
