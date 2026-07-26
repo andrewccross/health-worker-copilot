@@ -83,19 +83,86 @@ class Retriever:
 
     def _load_base_collection(self) -> chromadb.Collection:
         """
-        Load existing collection without specifying embedding function.
-        
-        Design decision: we do not pass embedding_function to
-        get_collection(). ChromaDB stores the embedding function
-        configuration in the collection metadata at creation time.
-        Passing a different function on retrieval causes a conflict
-        error even when the underlying model is the same.
-        
-        Instead we embed queries manually before passing to ChromaDB,
-        bypassing the automatic embedding entirely.
+        Load existing collection, rebuilding if not found.
+
+        Design decision: if the collection doesn't exist (e.g. on a
+        fresh cloud deployment where the SQLite file wasn't committed),
+        we rebuild it from the source PDFs rather than crashing.
+
+        This makes the app self-healing at the cost of a longer first
+        startup on cloud deployments without a pre-built database.
         """
         client = chromadb.PersistentClient(path=str(CHROMA_DIR))
-        return client.get_collection(name=COLLECTION_NAME)
+
+        try:
+            return client.get_collection(name=COLLECTION_NAME)
+        except Exception:
+            print(
+                f"Collection '{COLLECTION_NAME}' not found. "
+                f"Rebuilding from source PDFs..."
+            )
+            return self._rebuild_collection(client)
+
+    def _rebuild_collection(self, client) -> chromadb.Collection:
+        """
+        Rebuilds ChromaDB from source PDFs.
+        Called automatically if collection is missing.
+        """
+        from langchain_community.document_loaders import PyMuPDFLoader
+        from langchain_text_splitters import RecursiveCharacterTextSplitter
+
+        guidelines_dir = PROJECT_ROOT / "knowledge_base" / "who_tb_guidelines"
+        pdf_files = list(guidelines_dir.glob("*.pdf"))
+
+        if not pdf_files:
+            raise FileNotFoundError(
+                f"No PDFs found in {guidelines_dir}. "
+                f"Cannot rebuild knowledge base."
+            )
+
+        # Load PDFs
+        documents = []
+        for pdf_path in pdf_files:
+            loader = PyMuPDFLoader(str(pdf_path))
+            documents.extend(loader.load())
+
+        # Chunk
+        splitter = RecursiveCharacterTextSplitter(
+            chunk_size=500,
+            chunk_overlap=50,
+            length_function=len,
+            separators=["\n\n", "\n", ".", " ", ""]
+        )
+        chunks = splitter.split_documents(documents)
+
+        # Create collection
+        collection = client.create_collection(
+            name=COLLECTION_NAME,
+            embedding_function=self.embedding_function,
+            metadata={"hnsw:space": "cosine"}
+        )
+
+        # Add in batches
+        batch_size = 10
+        for i in range(0, len(chunks), batch_size):
+            batch = chunks[i:i + batch_size]
+            collection.add(
+                ids=[f"chunk_{i + j}" for j in range(len(batch))],
+                documents=[doc.page_content for doc in batch],
+                metadatas=[
+                    {
+                        "source": doc.metadata.get("source", "unknown"),
+                        "page": doc.metadata.get("page", 0),
+                        "filename": Path(
+                            doc.metadata.get("source", "unknown")
+                        ).name
+                    }
+                    for doc in batch
+                ]
+            )
+
+        print(f"Rebuilt collection with {len(chunks)} chunks.")
+        return collection
 
     def add_uploaded_document(self, pdf_bytes: bytes,
                                filename: str) -> int:
