@@ -55,7 +55,8 @@ Three deployment options are supported:
 
 | Rung | Provider | Data sovereignty | Cost | Quality |
 |---|---|---|---|---|
-| 1 | Claude / GPT-4o | Data leaves facility | ~$0.01/query | High |
+| 1 | Claude (Anthropic) | Data leaves facility | ~$0.01/query | Highest |
+| 1 | GPT-4o (OpenAI) | Data leaves facility | ~$0.01/query | High |
 | 4 | Ollama (local) | Data stays on device | $0.00/query | Reduced |
 
 ---
@@ -90,7 +91,11 @@ for known limitations.
 - RAG pipeline grounded in WHO TB treatment guidelines (7 documents, 
   510 pages, 2,151 chunks)
 - Structured clinical output with mandatory uncertainty flagging
-- Three LLM providers: Claude (Anthropic), OpenAI, Ollama (local)
+- Three LLM providers: Claude (Anthropic), GPT-4o / GPT-4o-mini (OpenAI),
+  and Ollama (local) — switchable from the sidebar with no code changes
+- Side-by-side provider comparison mode — submit one query, see two
+  providers respond simultaneously with per-provider cost, token count,
+  and response time metrics
 - Per-session cost tracking with Ollama $0.00 comparison
 - Data sovereignty indicator showing whether data leaves the facility
 - National guideline upload — augment WHO base with country-specific 
@@ -100,6 +105,8 @@ for known limitations.
 ---
 
 ## Architecture
+
+```
 health-worker-copilot/
 ├── llm/
 │   ├── client.py          # Provider abstraction (Claude/OpenAI/Ollama)
@@ -109,7 +116,8 @@ health-worker-copilot/
 │   ├── retriever.py       # Semantic search across guideline chunks
 │   └── pipeline.py        # Retrieval + LLM + structured output
 ├── app/
-│   └── main.py            # Streamlit UI
+│   ├── main.py            # Streamlit UI
+│   └── comparison.py      # Side-by-side provider comparison
 ├── eval/
 │   ├── test_cases.json    # Ground truth clinical cases
 │   └── evaluator.py       # Automated scoring framework
@@ -117,10 +125,11 @@ health-worker-copilot/
 │   ├── who_tb_guidelines/ # Source PDFs
 │   └── chroma_db/         # Pre-built vector store
 └── docs/
-├── design_decisions.md
-├── deployment_ladder.md
-├── evaluation_methodology.md
-└── failure_notes.md
+    ├── design_decisions.md
+    ├── deployment_ladder.md
+    ├── evaluation_methodology.md
+    └── failure_analysis.md
+```
 
 ---
 
@@ -148,6 +157,7 @@ full migration guidance and hardware requirements.
 - Python 3.10 or 3.11
 - [Ollama](https://ollama.com) with `mxbai-embed-large` pulled
 - Anthropic API key (for Claude provider)
+- OpenAI API key (optional, for GPT-4o provider)
 
 ```bash
 git clone https://github.com/andrewccross/health-worker-copilot.git
